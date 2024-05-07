@@ -17,3 +17,19 @@ class SiteUser(models.Model):
     
     def __str__(self):
         return self.access_token
+
+class Category(models.Model):
+    name = models.CharField(max_length=100)
+    user = models.ForeignKey(SiteUser, on_delete=models.CASCADE, related_name='categories', blank=True, null=True)
+
+    def __str__(self):
+        return self.name
+
+class Link(models.Model):
+    title = models.CharField(max_length=200)
+    url = models.URLField()
+    image = models.ImageField(upload_to='link_images/', blank=True, null=True)
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='links')
+
+    def __str__(self):
+        return self.title
