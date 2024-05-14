@@ -6,6 +6,7 @@ from .models import Category, Link, SiteUser
 from .serializers import CategorySerializer, LinkSerializer, SiteUserSerializer
 from rest_framework.response import Response
 from django.contrib.auth.models import User
+from rest_framework.exceptions import NotFound
 
 class SiteUserViewSet(viewsets.ModelViewSet):
     queryset = SiteUser.objects.all()
@@ -48,6 +49,33 @@ class CategoryViewSet(viewsets.ModelViewSet):
         serializer = self.serializer_class(categories, many=True)
         return Response({"categories": serializer.data}, status=201)
 
+    def create(self, request, *args, **kwargs):
+        data = request.data
+        access_token = request.headers.get('Authorization')
+        
+        if data and access_token:
+            try:
+                name = data['name']
+                site_user = SiteUser.objects.get(access_token=access_token)
+                category = Category.objects.create(name=name, user=site_user)
+                serializer = self.serializer_class(category)
+                return Response({"categories": serializer.data})
+            except Exception as e:
+                return Response({"error": str(e)})
+
 class LinkViewSet(viewsets.ModelViewSet):
     queryset = Link.objects.all()
     serializer_class = LinkSerializer
+
+    def list(self, request, *args, **kwargs):
+        authorized = request.headers.get('Authorization').split('broken')
+        access_token = authorized[0]
+        categoryName = authorized[1]
+        try:
+            site_user = SiteUser.objects.get(access_token=access_token)
+            category = Category.objects.get(user=site_user, name=categoryName)
+            links = Link.objects.filter(category=category)
+            serializer = self.serializer_class(links, many=True)
+            return Response({"links": serializer.data}, status=201)
+        except SiteUser.DoesNotExist:
+            raise NotFound("SiteUser with the provided access token does not exist")
