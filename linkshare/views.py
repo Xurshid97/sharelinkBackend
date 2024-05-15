@@ -43,11 +43,19 @@ class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
     def list(self, request, *args, **kwargs):
-        access_token = request.headers.get('Authorization')
-        site_user = SiteUser.objects.get(access_token=access_token)
-        categories = Category.objects.filter(user=site_user)
-        serializer = self.serializer_class(categories, many=True)
-        return Response({"categories": serializer.data}, status=201)
+        try:
+            access_token = request.headers.get('Authorization')
+            if not access_token:
+                return Response({"error": "Authorization header missing"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            site_user = SiteUser.objects.get(access_token=access_token)
+            categories = Category.objects.filter(user=site_user)
+            serializer = self.serializer_class(categories, many=True)
+            return Response({"categories": serializer.data}, status=200)
+        except SiteUser.DoesNotExist:
+            return Response({"error": "Site user not found"}, status=404)
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
 
     def create(self, request, *args, **kwargs):
         data = request.data
@@ -68,14 +76,50 @@ class LinkViewSet(viewsets.ModelViewSet):
     serializer_class = LinkSerializer
 
     def list(self, request, *args, **kwargs):
-        authorized = request.headers.get('Authorization').split('broken')
-        access_token = authorized[0]
-        categoryName = authorized[1]
         try:
+            authorized = request.headers.get('Authorization').split('broken')
+            if len(authorized) != 2:
+                raise ValueError("Authorization header is not formatted correctly")
+            access_token = authorized[0]
+            categoryId = authorized[1]
             site_user = SiteUser.objects.get(access_token=access_token)
-            category = Category.objects.get(user=site_user, name=categoryName)
+            category = Category.objects.get(user=site_user, id=categoryId)
             links = Link.objects.filter(category=category)
             serializer = self.serializer_class(links, many=True)
-            return Response({"links": serializer.data}, status=201)
+            return Response({"links": serializer.data}, status=200)
+        except ValueError as ve:
+            return Response({"error": str(ve)}, status=400)
         except SiteUser.DoesNotExist:
-            raise NotFound("SiteUser with the provided access token does not exist")
+            return Response({"error": "SiteUser with the provided access token does not exist"}, status=404)
+        except Category.DoesNotExist:
+            return Response({"error": "Category does not exist for the provided user"}, status=404)
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
+
+    def create(self, request, *args, **kwargs):
+        try:
+            data = request.data
+            access_token = request.headers.get('Authorization')
+            site_user = SiteUser.objects.get(access_token=access_token)
+            if data and site_user:
+                try:
+                    title = data['title']
+                    url = data['url']
+                    image = data['image']
+                    categoryId = data['id']
+                    categoryName = Category.objects.get(id=categoryId)
+                    link = Link.objects.create(title=title, url=url, image=image, category=categoryName)
+                    link.save()
+                    serializer = self.serializer_class(link)
+                    return Response({"categories": serializer.data})
+                except Exception as e:
+                    return Response({"error": str(e)})
+
+        except ValueError as ve:
+            return Response({"error": str(ve)}, status=400)
+        except SiteUser.DoesNotExist:
+            return Response({"error": "SiteUser with the provided access token does not exist"}, status=404)
+        except Category.DoesNotExist:
+            return Response({"error": "Category does not exist for the provided user"}, status=404)
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
