@@ -43,19 +43,27 @@ class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
     def list(self, request, *args, **kwargs):
+        access_token = request.headers.get('Authorization')
+        if access_token:
+            try:
+                site_user = SiteUser.objects.get(access_token=access_token)
+                categories = Category.objects.filter(user=site_user)
+                serializer = self.serializer_class(categories, many=True)
+                return Response({"categories": serializer.data}, status=200)
+            except SiteUser.DoesNotExist:
+                pass  # Handle invalid access token gracefully
+        else:
+            # Handle missing access token
+            return Response({"error": "Authorization token missing."}, status=401)
+
+        # Handle category list sent in Authorization header
         try:
-            access_token = request.headers.get('Authorization')
-            if not access_token:
-                return Response({"error": "Authorization header missing"}, status=status.HTTP_400_BAD_REQUEST)
-            
-            site_user = SiteUser.objects.get(access_token=access_token)
-            categories = Category.objects.filter(user=site_user)
-            serializer = self.serializer_class(categories, many=True)
+            category_list = access_token.split('CategoryListSent')[1].split(',')
+            found = [Category.objects.get(id=category_id) for category_id in category_list]
+            serializer = self.serializer_class(found, many=True)
             return Response({"categories": serializer.data}, status=200)
-        except SiteUser.DoesNotExist:
-            return Response({"error": "Site user not found"}, status=404)
         except Exception as e:
-            return Response({"error": str(e)}, status=500)
+            return Response({"error": "An error occurred while processing the request."}, status=500)
 
     def create(self, request, *args, **kwargs):
         data = request.data
@@ -90,9 +98,11 @@ class LinkViewSet(viewsets.ModelViewSet):
         except ValueError as ve:
             return Response({"error": str(ve)}, status=400)
         except SiteUser.DoesNotExist:
-            return Response({"error": "SiteUser with the provided access token does not exist"}, status=404)
-        except Category.DoesNotExist:
-            return Response({"error": "Category does not exist for the provided user"}, status=404)
+            category = Category.objects.get(id=categoryId)
+            links = Link.objects.filter(category=category)
+            serializer = self.serializer_class(links, many=True)
+            return Response({"links": serializer.data}, status=200)
+            # return Response({"error": "Category does not exist for the provided user"}, status=404)
         except Exception as e:
             return Response({"error": str(e)}, status=500)
 

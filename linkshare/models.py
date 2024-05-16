@@ -5,7 +5,10 @@ from django.contrib.auth.models import User
 class SiteUser(models.Model):
     access_token = models.CharField(max_length=36, default=uuid.uuid4, unique=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, blank=True, null=True)
-
+    image = models.ImageField(upload_to='user_images/', blank=True, null=True)
+    email = models.CharField(max_length=50, blank=True, null=True, unique=True)
+    savedcategories = models.CharField(max_length=255, blank=True, null=True)
+    
     @classmethod
     def create_with_access_token(cls):
         # Create SiteUser instance with a new UUID access token
@@ -19,7 +22,7 @@ class SiteUser(models.Model):
         return self.access_token
 
 class Category(models.Model):
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=300)
     user = models.ForeignKey(SiteUser, on_delete=models.CASCADE, related_name='categories', blank=True, null=True)
     
     def __str__(self):
