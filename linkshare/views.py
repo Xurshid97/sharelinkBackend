@@ -44,6 +44,7 @@ class CategoryViewSet(viewsets.ModelViewSet):
     serializer_class = CategorySerializer
     def list(self, request, *args, **kwargs):
         access_token = request.headers.get('Authorization')
+        print(access_token)
         if access_token:
             try:
                 site_user = SiteUser.objects.get(access_token=access_token)
