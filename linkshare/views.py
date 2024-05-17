@@ -44,8 +44,13 @@ class CategoryViewSet(viewsets.ModelViewSet):
     serializer_class = CategorySerializer
     def list(self, request, *args, **kwargs):
         access_token = request.headers.get('Authorization')
-        print(access_token)
-        if access_token:
+
+        if access_token and 'CategoryListSent' in access_token:
+            category_list = access_token.split('CategoryListSent')[1].split(',')
+            found = [Category.objects.get(id=category_id) for category_id in category_list]
+            serializer = self.serializer_class(found, many=True)
+            return Response({"categories": serializer.data}, status=200)
+        elif access_token:
             try:
                 site_user = SiteUser.objects.get(access_token=access_token)
                 categories = Category.objects.filter(user=site_user)
@@ -56,15 +61,6 @@ class CategoryViewSet(viewsets.ModelViewSet):
         else:
             # Handle missing access token
             return Response({"error": "Authorization token missing."}, status=401)
-
-        # Handle category list sent in Authorization header
-        try:
-            category_list = access_token.split('CategoryListSent')[1].split(',')
-            found = [Category.objects.get(id=category_id) for category_id in category_list]
-            serializer = self.serializer_class(found, many=True)
-            return Response({"categories": serializer.data}, status=200)
-        except Exception as e:
-            return Response({"error": "An error occurred while processing the request."}, status=500)
 
     def create(self, request, *args, **kwargs):
         data = request.data
@@ -87,6 +83,7 @@ class LinkViewSet(viewsets.ModelViewSet):
     def list(self, request, *args, **kwargs):
         try:
             authorized = request.headers.get('Authorization').split('broken')
+            print(authorized)
             if len(authorized) != 2:
                 raise ValueError("Authorization header is not formatted correctly")
             access_token = authorized[0]
