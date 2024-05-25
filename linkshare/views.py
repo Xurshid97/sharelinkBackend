@@ -143,6 +143,8 @@ class CategoryViewSet(viewsets.ModelViewSet):
         if 'SharedCategoryListSent' in access_token:
             user_token = access_token.split('SharedCategoryListSent')[0]
             category_list = access_token.split('SharedCategoryListSent')[1].split(',')
+            if len(category_list) == 1 and category_list[0] == '':
+                return Response({"categories": []}, status=200)
             if not user_token and category_list:
                 found = [Category.objects.get(id=category_id) for category_id in category_list]
                 found = [category for category in found if category.isPublic]
@@ -175,6 +177,8 @@ class CategoryViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         data = request.data
         access_token = request.headers.get('Authorization')
+        if not access_token:
+            access_token = None
         
         if data and access_token:
             try:
@@ -185,6 +189,16 @@ class CategoryViewSet(viewsets.ModelViewSet):
                 return Response({"categories": serializer.data})
             except Exception as e:
                 return Response({"error": str(e)})
+        elif data and not access_token:
+            name = data['name']
+            print('name', name)
+            site_user = SiteUser.objects.create()
+            site_user.save()
+            category = Category.objects.create(name=name, user=site_user, isPublic=True)
+            category.save()
+            serializer = self.serializer_class(category)
+            return Response({"access_token": site_user.access_token})
+        
     
     def patch(self, request, *args, **kwargs):
         data = request.data

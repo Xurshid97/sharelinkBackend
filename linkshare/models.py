@@ -23,6 +23,8 @@ class SiteUser(models.Model):
 
 class Category(models.Model):
     name = models.CharField(max_length=300)
+    image = models.ImageField(upload_to='category_images/', blank=True, null=True)
+    description = models.TextField(null=True, blank=True)
     user = models.ForeignKey(SiteUser, on_delete=models.CASCADE, related_name='categories', blank=True, null=True)
     isPublic = models.BooleanField(default=False)
     isShared = models.BooleanField(default=False)
