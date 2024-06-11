@@ -4,7 +4,7 @@ from django.contrib.auth.models import User
 
 class SiteUser(models.Model):
     access_token = models.CharField(max_length=36, default=uuid.uuid4, unique=True)
-    user = models.ForeignKey(User,on_delete=models.CASCADE, blank=True, null=True)
+    user = models.OneToOneField(User,on_delete=models.CASCADE, blank=True, null=True)
     image = models.ImageField(upload_to='user_images/', blank=True, null=True)
     email = models.CharField(max_length=50, blank=True, null=True, unique=True)
     savedcategories = models.CharField(max_length=255, blank=True, null=True)
@@ -17,12 +17,18 @@ class SiteUser(models.Model):
         # Save the instance to the database
         site_user.save()
         return site_user
-    
     def __str__(self):
         return self.access_token
 
+class GlobalCategory(models.Model):
+    name = models.CharField(max_length=300)
+    
+    def __str__(self):
+        return self.name
+
 class Category(models.Model):
     name = models.CharField(max_length=300)
+    globalcategory = models.ForeignKey(GlobalCategory, on_delete=models.CASCADE, blank=True, null=True)
     image = models.ImageField(upload_to='category_images/', blank=True, null=True)
     description = models.TextField(null=True, blank=True)
     user = models.ForeignKey(SiteUser, on_delete=models.CASCADE, related_name='categories', blank=True, null=True)

@@ -1,5 +1,4 @@
 from django.shortcuts import render
-
 # Create your views here.
 from rest_framework import viewsets
 from yaml import serialize
@@ -9,22 +8,34 @@ from rest_framework.response import Response
 from django.contrib.auth.models import User
 from rest_framework.exceptions import NotFound
 
+
 class SiteUserViewSet(viewsets.ModelViewSet):
     queryset = SiteUser.objects.all()
     serializer_class = SiteUserSerializer
 
     def list(self, request, *args, **kwargs):
         access_token = request.headers.get('Authorization')
-        if access_token:
+        if access_token and 'userCreateWithoutAccessToken' not in access_token:
             try:
                 site_user = SiteUser.objects.get(access_token=access_token)
                 serializer = self.serializer_class(site_user)
                 return Response(serializer.data)
             except SiteUser.DoesNotExist:
                 return Response({"error": "User not found."}, status=404)
-        user = SiteUser.objects.create()
-        user.save()
-        return Response({"access_token": user.access_token}, status=201)
+            
+        elif access_token and 'userCreateWithoutAccessToken' in access_token:
+            # check if access token has index 1 after split and is not empty
+            userSharedCategories = ""
+            if len(access_token.split('userCreateWithoutAccessToken')) == 2:
+                userSharedCategories = access_token.split('userCreateWithoutAccessToken')[1].split(',')
+                userSharedCategories = [int(category) for category in userSharedCategories if category != '']
+                userSharedCategories = ','.join([str(category) for category in userSharedCategories])
+                
+            user = SiteUser.objects.create()
+            user.savedcategories = userSharedCategories
+            user.save()
+            return Response({"access_token": user.access_token}, status=201)
+        return Response({"error": "User not found."}, status=404)
     
     # this post request is for registering user with already access token.
     def create(self, request, *args, **kwargs):
@@ -48,9 +59,13 @@ class SiteUserViewSet(viewsets.ModelViewSet):
                     user = User.objects.get(username=username)
                     if user.password == password:
                         site_user = SiteUser.objects.get(access_token=login_token)
-                        site_user.user = user
-                        site_user.save()
-                        return Response({"access_token": site_user.access_token, "message": "User authenticated successfully."})
+                        if site_user.user == user:
+                            site_user.user = user
+                            site_user.save()
+                            return Response({"access_token": site_user.access_token, "message": "User authenticated successfully.", "SavedCategories": site_user.savedcategories})
+                        else:
+                            site_user = SiteUser.objects.get(user=user)
+                            return Response({"access_token": site_user.access_token, "message": "User authenticated successfully.", "SavedCategories": site_user.savedcategories})
                     else:
                         return Response({"message": "Invalid password."})
                 else:
@@ -64,7 +79,7 @@ class SiteUserViewSet(viewsets.ModelViewSet):
                     user = User.objects.get(username=username)
                     if user.password == password:
                         site_user = SiteUser.objects.get(user=user)
-                        return Response({"access_token": site_user.access_token, "message": "User authenticated successfully."})
+                        return Response({"access_token": site_user.access_token, "message": "User authenticated successfully.", "SavedCategories": site_user.savedcategories})
                     else:
                         return Response({"message": "Invalid password."})
                 else:
@@ -73,10 +88,10 @@ class SiteUserViewSet(viewsets.ModelViewSet):
                 return Response({"message": "User not found."})
 
         elif data and access_token:
+            print('access_token', data)
             user = User.objects.filter(username=username).first()
             site_user = SiteUser.objects.get(access_token=access_token)
-
-            if not user and not site_user.user and username and password:
+            if not user and username and password:
                 my_user = User.objects.create(username=username, password=password)
                 my_user.save()
                 site_user.user = my_user
@@ -87,10 +102,9 @@ class SiteUserViewSet(viewsets.ModelViewSet):
             else:
                 return Response({"message": "the user is already present go to log in"})
         elif data and not access_token:
-            print(data)
+            print('not access_token', data)
             if not User.objects.filter(username=username).exists():
                 site_user = SiteUser.objects.create()
-                site_user.save()
                 my_user = User.objects.create(username=username, password=password)
                 my_user.save()
                 print(site_user.access_token)
@@ -100,6 +114,7 @@ class SiteUserViewSet(viewsets.ModelViewSet):
                 nsite_user.password = password
                 nsite_user.email = email
                 nsite_user.image = files.get('image')
+                nsite_user.savedcategories = data.get('savedcategories')
                 nsite_user.save()
                 return Response({"access_token": nsite_user.access_token, "message": "User saved successfully."})
             else:
@@ -120,6 +135,26 @@ class SiteUserViewSet(viewsets.ModelViewSet):
                 return Response({"error": "User not found."}, status=404)
         return Response({"error": "Authorization token missing."}, status=401)
 
+    def patch(self, request, *args, **kwargs):
+        data = request.data       
+        files = request.FILES
+        access_token = request.headers.get('Authorization')
+        print(data)
+        if 'saveimage' in access_token:
+            access_token = access_token.split('saveimage')[0]
+            print('access_token', access_token)
+            siteUser = SiteUser.objects.get(access_token=access_token)
+            siteUser.image = files.get('image')
+            siteUser.save()
+            return Response({"message": "image saved successfully"})
+        elif access_token:
+            siteUser = SiteUser.objects.get(access_token=access_token)
+            userSharedCategories = ','.join([str(category) for category in data['savedCategories']])
+            siteUser.savedcategories = userSharedCategories
+            siteUser.save()
+            return Response({"message": "categories saved successfully"})
+        return Response({"message": "User must have access token"})
+
 class CategoryViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
@@ -128,10 +163,14 @@ class CategoryViewSet(viewsets.ModelViewSet):
         access_token = request.headers.get('Authorization')
         if 'global_categories' in access_token:
             # also return username
-            categories = Category.objects.filter(isPublic=True)
+            categories = Category.objects.filter(isPublic=True, isShared=True)
             serialized_categories = []
             for category in categories:
                 serialized_category = self.serializer_class(category).data
+                if category.globalcategory.name:
+                    serialized_category['globalcategory'] = category.globalcategory.name
+                else:
+                    serialized_category['globalcategory'] = "general"
                 if category.user.user:
                     serialized_category['username'] = category.user.user.username
                 else:
@@ -189,15 +228,6 @@ class CategoryViewSet(viewsets.ModelViewSet):
                 return Response({"categories": serializer.data})
             except Exception as e:
                 return Response({"error": str(e)})
-        elif data and not access_token:
-            name = data['name']
-            print('name', name)
-            site_user = SiteUser.objects.create()
-            site_user.save()
-            category = Category.objects.create(name=name, user=site_user, isPublic=True)
-            category.save()
-            serializer = self.serializer_class(category)
-            return Response({"access_token": site_user.access_token})
         
     
     def patch(self, request, *args, **kwargs):
@@ -236,6 +266,7 @@ class CategoryViewSet(viewsets.ModelViewSet):
             except Exception as e:
                 return Response({"error": str(e)})
 
+
 class LinkViewSet(viewsets.ModelViewSet):
     queryset = Link.objects.all()
     serializer_class = LinkSerializer
@@ -255,14 +286,14 @@ class LinkViewSet(viewsets.ModelViewSet):
                 category = Category.objects.get(user=site_user, id=categoryId)
                 links = Link.objects.filter(category=category)
                 serializer = self.serializer_class(links, many=True)
-                return Response({"links": serializer.data}, status=200)
+                return Response({"links": serializer.data, "category_name": category.name}, status=200)
             except Category.DoesNotExist:
                 print('Category does not exist for the provided user')
                 category = Category.objects.get(id=categoryId)
                 if category.isPublic:
                     links = Link.objects.filter(category=category)
                     serializer = self.serializer_class(links, many=True)
-                    return Response({"links": serializer.data}, status=200)
+                    return Response({"links": serializer.data, "category_name": category.name}, status=200)
                 else:
                     return Response({"error": "Category is not public"}, status=404)
         except ValueError as ve:
@@ -272,42 +303,13 @@ class LinkViewSet(viewsets.ModelViewSet):
             if category.isPublic:
                 links = Link.objects.filter(category=category)
                 serializer = self.serializer_class(links, many=True)
-                return Response({"links": serializer.data}, status=200)
+                return Response({"links": serializer.data, "category_name": category.name}, status=200)
             else:
                 return Response({"error": "Category is not public"}, status=404)
             # return Response({"error": "Category does not exist for the provided user"}, status=404)
         except Exception as e:
             return Response({"error": str(e)}, status=500)
 
-    # def create(self, request, *args, **kwargs):
-    #     try:
-    #         data = request.data
-    #         access_token = request.headers.get('Authorization')
-                
-    #         site_user = SiteUser.objects.get(access_token=access_token)
-    #         if data and site_user:
-    #             try:
-    #                 title = data['title']
-    #                 url = data['url']
-    #                 image = data['image']
-    #                 categoryId = data['id']
-    #                 description = data['description']
-    #                 categoryName = Category.objects.get(id=categoryId)
-    #                 link = Link.objects.create(title=title, url=url,image=image, category=categoryName, description=description)
-    #                 link.save()
-    #                 serializer = self.serializer_class(link)
-    #                 return Response({"links": serializer.data})
-    #             except Exception as e:
-    #                 return Response({"error": str(e)})
-
-    #     except ValueError as ve:
-    #         return Response({"error": str(ve)}, status=400)
-    #     except SiteUser.DoesNotExist:
-    #         return Response({"error": "SiteUser with the provided access token does not exist"}, status=404)
-    #     except Category.DoesNotExist:
-    #         return Response({"error": "Category does not exist for the provided user"}, status=404)
-    #     except Exception as e:
-    #         return Response({"error": str(e)}, status=500)
     def create(self, request, *args, **kwargs):
         try:
             data = request.data
@@ -404,7 +406,7 @@ class LinkViewSet(viewsets.ModelViewSet):
                 return Response({"error": str(e)}, status=400)
         else:
             return Response({"error": "Invalid data or access token missing"}, status=400)
-            
+    
 class LinkImageViewSet(viewsets.ModelViewSet):
     queryset = Image.objects.all()
     serializer_class = ImageSerializer
@@ -423,5 +425,3 @@ class LinkImageViewSet(viewsets.ModelViewSet):
             except Exception as e:
                 return Response({"error": str(e)})
         return Response({"error": "Authorization token missing."}, status=401)
-
-    

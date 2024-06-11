@@ -6,7 +6,7 @@ class SiteUserSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source='user.username')
     class Meta:
         model = SiteUser
-        fields = ['id', 'access_token', 'email', 'image', 'username']
+        fields = ['id', 'access_token', 'email', 'image', 'username', 'savedcategories']
 
 class LinkSerializer(serializers.ModelSerializer):
     class Meta:
